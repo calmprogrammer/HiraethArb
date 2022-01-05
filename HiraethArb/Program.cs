@@ -2,7 +2,7 @@
 using HiraethArb.BusinessLogic.Classes;
 
 
-const string tokensUrl = @"https://api.1inch.io/v4.0/137/tokens";
+const string tokensUrl = @"https://api.1inch.io/v4.0/137/tokens"; // token api from 1 inch
 
 double amount = 10000000000000000;
 
@@ -24,14 +24,9 @@ foreach (var tokenFrom in tokenAPI.tokensDictionary!)
         string quoteUrl = @$"https://api.1inch.io/v4.0/137/quote?fromTokenAddress={fromTokenAddress}&toTokenAddress={toTokenAddress}&amount={amount}";
         QuoteAPI quote = new QuoteAPI(quoteUrl);
         quote.GetAPI();
-        Console.WriteLine($"{quote.quote?.fromToken?.symbol} - {quote.quote?.toToken?.symbol} Price : {quote.quote?.toTokenAmount} Gas Fees {quote.quote?.estimatedGas}");
+        Console.WriteLine($"{quote.quote?.fromToken?.symbol} - {quote.quote?.toToken?.symbol} Price : {quote.quote?.toTokenAmount} {quote.quote?.toToken?.symbol} Gas Fees {quote.quote?.estimatedGas}");
     }
 
 
 }
-
-//foreach (var token in tokenAPI.tokensDictionary!)
-//{
-//    Console.WriteLine(tokenAPI.tokensDictionary[token.Key].name);
-//}
 
