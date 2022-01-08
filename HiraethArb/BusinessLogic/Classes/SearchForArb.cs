@@ -67,18 +67,26 @@ namespace HiraethArb.BusinessLogic.Classes
             }
         }
 
-        private static void SearchForPriceDifference(QuoteAPI quoteAPIFromToken, QuoteAPI quoteAPIPriceDifference)
+        private void SearchForPriceDifference(QuoteAPI quoteAPIFromToken, QuoteAPI quoteAPIPriceDifference)
         {
+            BigInteger? estimatedGasFeeEth = (quoteAPIFromToken.quote!.estimatedGas + quoteAPIPriceDifference.quote!.estimatedGas);
+            Token? eth = tokenList!.Find(x => x.name!.Equals("MATIC"));
+
+            string gasFeeUrl = @$"https://api.1inch.io/v4.0/137/quote?fromTokenAddress={eth!.address}&toTokenAddress={quoteAPIFromToken.quote.toToken!.address}&amount={estimatedGasFeeEth}";
+            QuoteAPI quoteAPIGasFeeToToken = new QuoteAPI(gasFeeUrl);
             if (!(quoteAPIPriceDifference.quote!.toTokenAmount!.Equals(quoteAPIFromToken.quote!.toTokenAmount)))
             {
                 Console.WriteLine($"Arb oppurtunity : {quoteAPIPriceDifference.quote!.toTokenAmount} {quoteAPIFromToken.quote!.toTokenAmount} ");
 
                 bool isSuccessfulConversionPriceDifferenceAmount = BigInteger.TryParse(quoteAPIPriceDifference.quote!.toTokenAmount, out BigInteger priceDiferenceAmount);
                 bool isSuccessfulConversionToTokenAmount = BigInteger.TryParse(quoteAPIFromToken.quote!.toTokenAmount, out BigInteger toTokenAmount);
+                bool isSucessfulConversionGasFee = BigInteger.TryParse(quoteAPIGasFeeToToken.quote?.toTokenAmount, out BigInteger gasFeeToToken);
+                if (gasFeeToToken == 0)
+                    gasFeeToToken = (BigInteger)(quoteAPIFromToken.quote!.estimatedGas + quoteAPIPriceDifference.quote!.estimatedGas)!;
 
-                BigInteger difference = priceDiferenceAmount - toTokenAmount;
+                BigInteger difference = priceDiferenceAmount - toTokenAmount - gasFeeToToken;
                 if (isSuccessfulConversionPriceDifferenceAmount && isSuccessfulConversionToTokenAmount)
-                    Console.WriteLine($"Price Difference : {BigInteger.Abs(difference)} {quoteAPIFromToken.quote.toToken!.symbol}");
+                    Console.WriteLine($"Price Difference : {BigInteger.Abs(difference)} {quoteAPIFromToken.quote.toToken!.symbol} Gas Fee : {gasFeeToToken} {quoteAPIFromToken.quote.toToken!.symbol}");
 
             }
         }
@@ -110,3 +118,7 @@ namespace HiraethArb.BusinessLogic.Classes
         }
     }
 }
+
+
+//1 Wei => 	0.00000000 ETH
+//include gas fees, get aave tokens, get liquidity, integrate test net
