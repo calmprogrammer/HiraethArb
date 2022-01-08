@@ -32,9 +32,9 @@ namespace HiraethArb.BusinessLogic.Classes
             }
             catch (Exception e)
             {
-                Console.WriteLine("Error :  " + e); 
+                Console.WriteLine("Error :  " + e.Message);
             }
-            
+
         }
 
         protected abstract void Deserialize();
