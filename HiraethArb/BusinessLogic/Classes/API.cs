@@ -32,7 +32,7 @@ namespace HiraethArb.BusinessLogic.Classes
             }
             catch (Exception e)
             {
-                Console.WriteLine("Error :  " + e.Message);
+                Console.WriteLine("\nError :  " + e.Message);
             }
 
         }

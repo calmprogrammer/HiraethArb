@@ -9,12 +9,13 @@ namespace HiraethArb.BusinessLogic.Classes
 {
     public class SearchForArb
     {
-        public long? amount { get; set; }
+        public string? amount { get; set; }
         public List<Token>? tokenList { get; set; }
 
         public string fromTokenAddress { get; set; }
 
-        public SearchForArb(long? amount, List<Token>? tokenList, string fromTokenAddress)
+        private string? finalArbs; 
+        public SearchForArb(string? amount, List<Token>? tokenList, string fromTokenAddress)
         {
             this.amount = amount;
             this.tokenList = tokenList;
@@ -30,7 +31,7 @@ namespace HiraethArb.BusinessLogic.Classes
                 string quoteUrlOne = @$"https://api.1inch.io/v4.0/137/quote?fromTokenAddress={fromTokenAddress}&toTokenAddress={toTokenAddress}&amount={amount}";
                 string quoteUrlTwo = @$"https://api.1inch.io/v4.0/137/quote?fromTokenAddress={toTokenAddress}&toTokenAddress={fromTokenAddress}&amount={amount}";
 
-                QuoteAPI quoteAPIFromToken = new QuoteAPI(quoteUrlOne);
+                var quoteAPIFromToken = new QuoteAPI(quoteUrlOne);
                 QuoteAPI quoteAPIToToken = new QuoteAPI(quoteUrlTwo);
                 quoteAPIFromToken.GetAPI();
                 quoteAPIToToken.GetAPI();
@@ -40,19 +41,13 @@ namespace HiraethArb.BusinessLogic.Classes
 
                 try
                 {
-                    string priceDifferenceUrlFromToken = @$"https://api.1inch.io/v4.0/137/quote?fromTokenAddress={fromTokenAddress}&toTokenAddress={toTokenAddress}&amount={quoteAPIToToken.quote?.fromTokenAmount}";
-                    QuoteAPI quoteAPIPriceDifference = new QuoteAPI(priceDifferenceUrlFromToken);
-                    quoteAPIPriceDifference.GetAPI();
-
+                    var quoteAPIPriceDifference = BuildAPIURL(fromTokenAddress, toTokenAddress, quoteAPIToToken);
                     if (quoteAPIPriceDifference.quote == null)
                         continue;
 
-                    SearchForPriceDifference(quoteAPIFromToken, quoteAPIPriceDifference);
+                    SearchForPriceDifference(quoteAPIFromToken, quoteAPIPriceDifference); 
 
-                    string priceDifferenceUrlToToken = @$"https://api.1inch.io/v4.0/137/quote?fromTokenAddress={toTokenAddress}&toTokenAddress={fromTokenAddress}&amount={quoteAPIFromToken.quote?.fromTokenAmount}";
-                    quoteAPIPriceDifference = new QuoteAPI(priceDifferenceUrlToToken);
-                    quoteAPIPriceDifference.GetAPI();
-
+                    quoteAPIPriceDifference = BuildAPIURL(toTokenAddress, fromTokenAddress, quoteAPIFromToken);
                     if (quoteAPIPriceDifference.quote == null)
                         continue;
 
@@ -65,39 +60,67 @@ namespace HiraethArb.BusinessLogic.Classes
                 }
 
             }
+            Console.WriteLine("final arb opps : \n" + finalArbs); 
+        }
+
+        private static QuoteAPI BuildAPIURL(string fromTokenAddress, string toTokenAddress, QuoteAPI quoteAPIToToken)
+        {
+            string priceDifferenceUrlFromToken = @$"https://api.1inch.io/v4.0/137/quote?fromTokenAddress={fromTokenAddress}&toTokenAddress={toTokenAddress}&amount={quoteAPIToToken.quote?.fromTokenAmount}";
+            QuoteAPI quoteAPIPriceDifference = new QuoteAPI(priceDifferenceUrlFromToken);
+            quoteAPIPriceDifference.GetAPI();
+            return quoteAPIPriceDifference;
         }
 
         private void SearchForPriceDifference(QuoteAPI quoteAPIFromToken, QuoteAPI quoteAPIPriceDifference)
         {
+            string finalArbs = ""; 
             BigInteger? estimatedGasFeeEth = (quoteAPIFromToken.quote!.estimatedGas + quoteAPIPriceDifference.quote!.estimatedGas);
-            Token? eth = tokenList!.Find(x => x.name!.Equals("MATIC"));
+            Token? eth = tokenList!.Find(x => x.symbol!.Equals("MATIC"));
 
-            string gasFeeUrl = @$"https://api.1inch.io/v4.0/137/quote?fromTokenAddress={eth!.address}&toTokenAddress={quoteAPIFromToken.quote.toToken!.address}&amount={estimatedGasFeeEth}";
+            var gasFeeUrl = @$"https://api.1inch.io/v4.0/137/quote?fromTokenAddress={eth!.address}&toTokenAddress={quoteAPIFromToken.quote.toToken!.address}&amount={estimatedGasFeeEth}";
             QuoteAPI quoteAPIGasFeeToToken = new QuoteAPI(gasFeeUrl);
+
             if (!(quoteAPIPriceDifference.quote!.toTokenAmount!.Equals(quoteAPIFromToken.quote!.toTokenAmount)))
             {
+
                 Console.WriteLine($"Arb oppurtunity : {quoteAPIPriceDifference.quote!.toTokenAmount} {quoteAPIFromToken.quote!.toTokenAmount} ");
 
                 bool isSuccessfulConversionPriceDifferenceAmount = BigInteger.TryParse(quoteAPIPriceDifference.quote!.toTokenAmount, out BigInteger priceDiferenceAmount);
                 bool isSuccessfulConversionToTokenAmount = BigInteger.TryParse(quoteAPIFromToken.quote!.toTokenAmount, out BigInteger toTokenAmount);
                 bool isSucessfulConversionGasFee = BigInteger.TryParse(quoteAPIGasFeeToToken.quote?.toTokenAmount, out BigInteger gasFeeToToken);
+
                 if (gasFeeToToken == 0)
                     gasFeeToToken = (BigInteger)(quoteAPIFromToken.quote!.estimatedGas + quoteAPIPriceDifference.quote!.estimatedGas)!;
 
-                BigInteger difference = priceDiferenceAmount - toTokenAmount - gasFeeToToken;
-                if (isSuccessfulConversionPriceDifferenceAmount && isSuccessfulConversionToTokenAmount)
-                    Console.WriteLine($"Price Difference : {BigInteger.Abs(difference)} {quoteAPIFromToken.quote.toToken!.symbol} Gas Fee : {gasFeeToToken} {quoteAPIFromToken.quote.toToken!.symbol}");
+                BigInteger difference = priceDiferenceAmount - toTokenAmount - gasFeeToToken;//negative eth-> btc   // btc-> eth 
 
+                int isBigger = BigInteger.Compare(difference, toTokenAmount / 10);
+
+                if (isSuccessfulConversionPriceDifferenceAmount && isSuccessfulConversionToTokenAmount && difference > 0 && isBigger >= 0)
+                {
+                    finalArbs += $"\nPrice Difference : {difference} {quoteAPIFromToken.quote.toToken!.symbol} Gas Fee : {gasFeeToToken} {quoteAPIFromToken.quote.toToken!.symbol}";
+                    this.finalArbs = finalArbs; 
+                    Console.Beep();
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine($"Price Difference : {difference} {quoteAPIFromToken.quote.toToken!.symbol} Gas Fee : {gasFeeToToken} {quoteAPIFromToken.quote.toToken!.symbol}");
+                    Console.ForegroundColor = ConsoleColor.White;
+                }
             }
+        
         }
 
         private static void WriteToConsole(QuoteAPI quoteAPIFromToken, QuoteAPI quoteAPIToToken)
         {
+            bool isSuccessfulConversionFromToken = BigInteger.TryParse(quoteAPIFromToken.quote?.toTokenAmount, out BigInteger fromTokenAmount);
+            bool isSuccessfulConversionToToken = BigInteger.TryParse(quoteAPIToToken.quote?.toTokenAmount, out BigInteger toTokenAmount);
+
+            if (!isSuccessfulConversionFromToken && !isSuccessfulConversionToToken) return;
+
             Console.WriteLine("\nQuote");
             Console.WriteLine($"{quoteAPIFromToken.quote?.fromToken?.symbol} - {quoteAPIFromToken.quote?.toToken?.symbol}" +
-                $" Price : {quoteAPIFromToken.quote?.toTokenAmount} {quoteAPIFromToken.quote?.toToken?.symbol} Gas Fees {quoteAPIFromToken.quote?.estimatedGas}");
+                $" Price : {fromTokenAmount} {quoteAPIFromToken.quote?.fromToken?.symbol} Gas Fees {quoteAPIFromToken.quote?.estimatedGas}");
             Console.WriteLine($"{quoteAPIToToken.quote?.fromToken?.symbol} - {quoteAPIToToken.quote?.toToken?.symbol}" +
-               $" Price : {quoteAPIToToken.quote?.toTokenAmount} {quoteAPIToToken.quote?.toToken?.symbol} Gas Fees {quoteAPIToToken.quote?.estimatedGas}");
+               $" Price : {toTokenAmount} {quoteAPIToToken.quote?.fromToken?.symbol} Gas Fees {quoteAPIToToken.quote?.estimatedGas}");
         }
 
 
@@ -120,5 +143,7 @@ namespace HiraethArb.BusinessLogic.Classes
 }
 
 
-//1 Wei => 	0.00000000 ETH
-//include gas fees, get aave tokens, get liquidity, integrate test net
+//What mphaso wants in the docs ----------->>>>>>>>>>>
+//
+
+//add tether quote for to token
