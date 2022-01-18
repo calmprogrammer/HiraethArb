@@ -19,5 +19,6 @@ namespace HiraethArb.BusinessLogic.Classes
             var tokens = JsonSerializer.Deserialize<Dictionary<string, Token>>(jsonObject!["tokens"]);
             this.tokensDictionary = tokens; 
         }
+        
     }
 }

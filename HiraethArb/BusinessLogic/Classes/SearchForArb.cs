@@ -4,54 +4,63 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
+using HiraethArb.BusinessLogic.Classes;
 
 namespace HiraethArb.BusinessLogic.Classes
 {
+    /// <summary>
+    /// A class that allows for the searching of arbitrage oppurtunities
+    /// </summary>
     public class SearchForArb
     {
-        public string? amount { get; set; }
+        //the from token amount which is passed to the object
+        public string? amount { get; set; } 
+
+         // the list of tokens from the specific network we are interacting with 
         public List<Token>? tokenList { get; set; }
 
-        public string fromTokenAddress { get; set; }
+        // the from token address that we are currently using for comparisons
+        public string fromTokenAddress { get; set; } 
 
-        private string? finalArbs; 
-        public SearchForArb(string? amount, List<Token>? tokenList, string fromTokenAddress)
+        //constructor to initialise the searchforarb object
+        public SearchForArb(string? amount, List<Token>? tokenList, string fromTokenAddress) 
         {
+            //assinging arguments to class properties
             this.amount = amount;
             this.tokenList = tokenList;
             this.fromTokenAddress = fromTokenAddress;
         }
 
+        /// <summary>
+        /// Method responsoble for loading all the quotes of the tokens
+        /// </summary>
         public void LoadQuotes()
         {
-            for (int i = 0; i < tokenList!.Count; i++)
+            //loop for the list of tokens
+            for (int i = 0; i < tokenList!.Count; i++) 
             {
 
+                // address of the toToken we are looking at currently
                 string toTokenAddress = tokenList[i].address!;
-                string quoteUrlOne = @$"https://api.1inch.io/v4.0/137/quote?fromTokenAddress={fromTokenAddress}&toTokenAddress={toTokenAddress}&amount={amount}";
-                string quoteUrlTwo = @$"https://api.1inch.io/v4.0/137/quote?fromTokenAddress={toTokenAddress}&toTokenAddress={fromTokenAddress}&amount={amount}";
 
-                var quoteAPIFromToken = new QuoteAPI(quoteUrlOne);
-                QuoteAPI quoteAPIToToken = new QuoteAPI(quoteUrlTwo);
-                quoteAPIFromToken.GetAPI();
-                quoteAPIToToken.GetAPI();
+                //Initial transaction quote returned. E.g. 1 eth -->> 0.05 btc 
+                QuoteAPI transaction = QuoteAPI.BuildAPIURL(fromTokenAddress, toTokenAddress, amount!); 
+                transaction.GetAPI();
 
-                CreateTextFile(quoteAPIFromToken, quoteAPIToToken);
-                WriteToConsole(quoteAPIFromToken, quoteAPIToToken);
+                //continue to next iteration if there is no transaction quote
+                if (transaction.quote == null)
+                    continue;
 
+                //error handling in the case of an unseen error occurs
                 try
                 {
-                    var quoteAPIPriceDifference = BuildAPIURL(fromTokenAddress, toTokenAddress, quoteAPIToToken);
-                    if (quoteAPIPriceDifference.quote == null)
+                    //inverse transaction quote returned. E.g. 0.05 btc -->> 1.002 eth 
+                    QuoteAPI inverseTransaction = QuoteAPI.BuildAPIURL(toTokenAddress, fromTokenAddress, transaction.quote!.toTokenAmount!);
+                    if (inverseTransaction.quote == null)
                         continue;
-
-                    SearchForPriceDifference(quoteAPIFromToken, quoteAPIPriceDifference); 
-
-                    quoteAPIPriceDifference = BuildAPIURL(toTokenAddress, fromTokenAddress, quoteAPIFromToken);
-                    if (quoteAPIPriceDifference.quote == null)
-                        continue;
-
-                    SearchForPriceDifference(quoteAPIToToken, quoteAPIPriceDifference);
+                    
+                    //calling method responsible for verifying if there is a positive price difference between the initial transaction amount and the inverse transaction amount
+                    SearchForPriceDifference(transaction, inverseTransaction);
 
                 }
                 catch (Exception e)
@@ -60,90 +69,38 @@ namespace HiraethArb.BusinessLogic.Classes
                 }
 
             }
-            Console.WriteLine("final arb opps : \n" + finalArbs); 
+
         }
 
-        private static QuoteAPI BuildAPIURL(string fromTokenAddress, string toTokenAddress, QuoteAPI quoteAPIToToken)
+
+        private void SearchForPriceDifference(QuoteAPI transaction, QuoteAPI inverseTransaction)
         {
-            string priceDifferenceUrlFromToken = @$"https://api.1inch.io/v4.0/137/quote?fromTokenAddress={fromTokenAddress}&toTokenAddress={toTokenAddress}&amount={quoteAPIToToken.quote?.fromTokenAmount}";
-            QuoteAPI quoteAPIPriceDifference = new QuoteAPI(priceDifferenceUrlFromToken);
-            quoteAPIPriceDifference.GetAPI();
-            return quoteAPIPriceDifference;
-        }
+            //conversion of amount and inverseAmount to BigInteger types to interact with as a number rather than a string
+            bool isInverseTransactionAmountConversionSuccessful = BigInteger.TryParse(inverseTransaction.quote!.toTokenAmount, out BigInteger inverseAmount);
+            bool isTransactionAmountConversionSuccessful = BigInteger.TryParse(this.amount, out BigInteger amount);
+           
+            //BigInteger type to store the difference between the amount and inverseAmount
+            BigInteger difference = 0;
 
-        private void SearchForPriceDifference(QuoteAPI quoteAPIFromToken, QuoteAPI quoteAPIPriceDifference)
-        {
-            string finalArbs = ""; 
-            BigInteger? estimatedGasFeeEth = (quoteAPIFromToken.quote!.estimatedGas + quoteAPIPriceDifference.quote!.estimatedGas);
-            Token? eth = tokenList!.Find(x => x.symbol!.Equals("MATIC"));
+            //checking if the converions were successful and if successful calculating the diference between the inverse amount and the intial amount. E.g. 1.02 eth - 1 eth ---> 0.02 eth
+            if (isInverseTransactionAmountConversionSuccessful && isTransactionAmountConversionSuccessful)
+                difference = inverseAmount - amount;
 
-            var gasFeeUrl = @$"https://api.1inch.io/v4.0/137/quote?fromTokenAddress={eth!.address}&toTokenAddress={quoteAPIFromToken.quote.toToken!.address}&amount={estimatedGasFeeEth}";
-            QuoteAPI quoteAPIGasFeeToToken = new QuoteAPI(gasFeeUrl);
-
-            if (!(quoteAPIPriceDifference.quote!.toTokenAmount!.Equals(quoteAPIFromToken.quote!.toTokenAmount)))
+            //if the difference is positive log the results as there is arbitrage. 
+            if (difference > 0)
             {
-
-                Console.WriteLine($"Arb oppurtunity : {quoteAPIPriceDifference.quote!.toTokenAmount} {quoteAPIFromToken.quote!.toTokenAmount} ");
-
-                bool isSuccessfulConversionPriceDifferenceAmount = BigInteger.TryParse(quoteAPIPriceDifference.quote!.toTokenAmount, out BigInteger priceDiferenceAmount);
-                bool isSuccessfulConversionToTokenAmount = BigInteger.TryParse(quoteAPIFromToken.quote!.toTokenAmount, out BigInteger toTokenAmount);
-                bool isSucessfulConversionGasFee = BigInteger.TryParse(quoteAPIGasFeeToToken.quote?.toTokenAmount, out BigInteger gasFeeToToken);
-
-                if (gasFeeToToken == 0)
-                    gasFeeToToken = (BigInteger)(quoteAPIFromToken.quote!.estimatedGas + quoteAPIPriceDifference.quote!.estimatedGas)!;
-
-                BigInteger difference = priceDiferenceAmount - toTokenAmount - gasFeeToToken;//negative eth-> btc   // btc-> eth 
-
-                int isBigger = BigInteger.Compare(difference, toTokenAmount / 10);
-
-                if (isSuccessfulConversionPriceDifferenceAmount && isSuccessfulConversionToTokenAmount && difference > 0 && isBigger >= 0)
-                {
-                    finalArbs += $"\nPrice Difference : {difference} {quoteAPIFromToken.quote.toToken!.symbol} Gas Fee : {gasFeeToToken} {quoteAPIFromToken.quote.toToken!.symbol}";
-                    this.finalArbs = finalArbs; 
-                    Console.Beep();
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine($"Price Difference : {difference} {quoteAPIFromToken.quote.toToken!.symbol} Gas Fee : {gasFeeToToken} {quoteAPIFromToken.quote.toToken!.symbol}");
-                    Console.ForegroundColor = ConsoleColor.White;
-                }
+                Logging.CreateTextFile(transaction);
+                Logging.WriteToConsole(transaction);
+                Console.WriteLine($"Arb oppurtunity :  {inverseAmount} - {this.amount} : {difference}");
+                Console.WriteLine("Quote api from token price: " + inverseTransaction.quote?.fromToken?.symbol + "-" + inverseTransaction.quote?.toToken?.symbol + " : " + inverseTransaction.quote?.toTokenAmount + " " + inverseTransaction.quote?.toToken?.symbol);
+                Console.Beep();
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"Price Difference : {difference} {transaction.quote?.fromToken?.symbol} Gas Fee : {transaction.quote?.estimatedGas} {transaction.quote?.fromToken?.symbol}");
+                Console.ForegroundColor = ConsoleColor.White;
             }
-        
+            return;
+
         }
 
-        private static void WriteToConsole(QuoteAPI quoteAPIFromToken, QuoteAPI quoteAPIToToken)
-        {
-            bool isSuccessfulConversionFromToken = BigInteger.TryParse(quoteAPIFromToken.quote?.toTokenAmount, out BigInteger fromTokenAmount);
-            bool isSuccessfulConversionToToken = BigInteger.TryParse(quoteAPIToToken.quote?.toTokenAmount, out BigInteger toTokenAmount);
-
-            if (!isSuccessfulConversionFromToken && !isSuccessfulConversionToToken) return;
-
-            Console.WriteLine("\nQuote");
-            Console.WriteLine($"{quoteAPIFromToken.quote?.fromToken?.symbol} - {quoteAPIFromToken.quote?.toToken?.symbol}" +
-                $" Price : {fromTokenAmount} {quoteAPIFromToken.quote?.fromToken?.symbol} Gas Fees {quoteAPIFromToken.quote?.estimatedGas}");
-            Console.WriteLine($"{quoteAPIToToken.quote?.fromToken?.symbol} - {quoteAPIToToken.quote?.toToken?.symbol}" +
-               $" Price : {toTokenAmount} {quoteAPIToToken.quote?.fromToken?.symbol} Gas Fees {quoteAPIToToken.quote?.estimatedGas}");
-        }
-
-
-        /// <summary>
-        /// Method that creates or appends to a text file the quotes that are genereated from the 1Inch API
-        /// </summary>
-        /// <param name="quoteAPIFromToken">The from token API</param>
-        /// <param name="quoteAPIToToken">The to token API</param>
-        private static void CreateTextFile(QuoteAPI quoteAPIFromToken, QuoteAPI quoteAPIToToken)
-        {
-            using StreamWriter outputFile = new StreamWriter("HiraethArb.txt", true);
-
-            outputFile.WriteLine($"{quoteAPIFromToken.quote?.fromToken?.symbol} - {quoteAPIFromToken.quote?.toToken?.symbol}" +
-            $",{quoteAPIFromToken.quote?.toTokenAmount} {quoteAPIFromToken.quote?.toToken?.symbol},{quoteAPIFromToken.quote?.estimatedGas}");
-
-            outputFile.WriteLine($"{quoteAPIToToken.quote?.fromToken?.symbol} - {quoteAPIToToken.quote?.toToken?.symbol}" +
-            $",{quoteAPIToToken.quote?.toTokenAmount} {quoteAPIToToken.quote?.toToken?.symbol},{quoteAPIToToken.quote?.estimatedGas}");
-        }
     }
 }
-
-
-//What mphaso wants in the docs ----------->>>>>>>>>>>
-//
-
-//add tether quote for to token
