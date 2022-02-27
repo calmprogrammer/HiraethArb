@@ -17,7 +17,6 @@ tokenAPI.GetAPI();
 //convert dictionary of tokens returned from 1inch api into a list of tokens for easiser interaction with the tokens
 var tokenList = tokenAPI.tokensDictionary!.Values.ToList<Token>();
 
-// this is a for loop mphaso, hahahahaha im so funny lolz, but in seriousness this loops for the amount of tokens so that we can compare each and every token to each other
 for (int i = 0; i < tokenList.Count; i++)
 {
     // creating an object of the searchArb class which essesntially searches for arbitrage oppurtuinities it takes 3 params the, the from token amount, the list of tokens, and the from token address
